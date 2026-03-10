@@ -2,4 +2,4 @@ __pycache__/
 *.pyc
 *.pyo
 .Python
-results/*.html
+results/.DS_Store
