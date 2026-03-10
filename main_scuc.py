@@ -117,21 +117,21 @@ if DAYS >= 2:
 print("解析対象季節: 1=春秋, 2=夏, 3=冬")
 SEASON = input_int("季節 [1-3, 省略=1]: ", 1, 1, 3)
 
-AREAS = ["Area1", "Area2", "Area3"]
-N_AREAS = 3
+AREAS = ["Area1", "Area2", "Area3", "Area4", "Area5"]
+N_AREAS = 5
 
-print("太陽光発電曲線: 1=快晴日, 2=準快晴日, 3=曇天日, 4=雨天日, 5=ランプアップ, 6=ランプダウン")
+print("太陽光発電曲線: 1=Clear, 2=Mostly clear, 3=Cloudy, 4=Rainy, 5=Ramp up, 6=Ramp down")
 print("風力発電曲線: 1=風が強い日, 2=風が弱い日, 3=午前中が強い日, 4=午後が強い日")
-print("※ エリア別設定は [エリア1,エリア2,エリア3] の順で入力（例: 1,2,3）")
+print("※ エリア別設定は [Area1,Area2,Area3,Area4,Area5] の順で入力（例: 1,2,3,1,4）")
 
 # エリア別の曲線タイプ（日ごとに変化する場合は内部で DAYS 分に展開）
 solar_types_by_area_day = [[1] * DAYS for _ in range(N_AREAS)]
 wind_types_by_area_day = [[1] * DAYS for _ in range(N_AREAS)]
 
 if DAYS == 1 or RENEW_MODE == 1:
-    # デフォルト: エリアごとに曲線を変える（Area1=快晴/風強, Area2=準快晴/午前強, Area3=曇天/午後強）
-    solar_by_area = input_int_list("太陽光曲線 [3個, 省略=1,2,3]: ", [1, 2, 3], N_AREAS, 1, 6)
-    wind_by_area = input_int_list("風力曲線   [3個, 省略=1,3,4]: ", [1, 3, 4], N_AREAS, 1, 4)
+    # デフォルト: エリアごとに曲線を変える（例）
+    solar_by_area = input_int_list("Solar type [5 values, default=1,2,3,2,3]: ", [1, 2, 3, 2, 3], N_AREAS, 1, 6)
+    wind_by_area = input_int_list("Wind type  [5 values, default=1,3,4,3,2]: ", [1, 3, 4, 3, 2], N_AREAS, 1, 4)
     for a in range(N_AREAS):
         solar_types_by_area_day[a] = [solar_by_area[a]] * DAYS
         wind_types_by_area_day[a] = [wind_by_area[a]] * DAYS
@@ -158,11 +158,11 @@ F_MAX = input_int("連系線容量 F_max (MW) [1-500, 省略=250]: ", 250, 1, 50
 
 ALLOW_SOLAR_CURTAIL = input_int("太陽光余剰（出力抑制）を許容する？ 1=許容, 2=許容しない [省略=1]: ", 1, 1, 2)
 
-# 需要・再エネのエリア別配分（デフォルトでエリアごとに差をつける）
-# 需要: 40/35/25%、太陽光設備: 35/40/25%、風力設備: 30/40/30%
-load_share_pct = [40.0, 35.0, 25.0]
-solar_cap_pct = [35.0, 40.0, 25.0]
-wind_cap_pct = [30.0, 40.0, 30.0]
+# 需要・再エネのエリア別配分（デフォルト）
+# 需要: 合計100%、太陽光設備: 合計100%、風力設備: 合計100%
+load_share_pct = [25.0, 20.0, 20.0, 20.0, 15.0]
+solar_cap_pct = [20.0, 20.0, 20.0, 20.0, 20.0]
+wind_cap_pct = [20.0, 20.0, 20.0, 20.0, 20.0]
 print()
 
 # ---------------------------------------------------------------------------
@@ -211,20 +211,19 @@ DEMAND = [int(round(d * DEMAND_SCALE)) for d in (demand_1d * DAYS)[:T]]
 
 # 太陽光は 1 倍で 1 回のみ実行
 
-# 需要のエリア別プロファイル（24h、各時刻で3エリアの合計=1）: 形をエリアごとに変える
-# Area1=夜間多め, Area2=昼間多め, Area3=夕方多め
-_w1 = [1.25, 1.22, 1.20, 1.18, 1.15, 1.10, 0.95, 0.85, 0.80, 0.78, 0.78, 0.80,
-       0.82, 0.82, 0.82, 0.85, 0.88, 0.92, 0.95, 0.98, 1.00, 1.05, 1.12, 1.18]
-_w2 = [0.70, 0.72, 0.75, 0.78, 0.82, 0.88, 1.05, 1.20, 1.28, 1.32, 1.32, 1.28,
-       1.25, 1.25, 1.25, 1.22, 1.18, 1.12, 1.08, 1.05, 1.02, 0.95, 0.88, 0.78]
-_w3 = [1.05, 1.06, 1.05, 1.04, 1.03, 1.02, 1.00, 0.95, 0.92, 0.90, 0.90, 0.92,
-       0.93, 0.93, 0.93, 0.93, 0.94, 0.96, 0.97, 0.97, 0.98, 1.00, 1.00, 1.04]
-_denom = [_w1[h] + _w2[h] + _w3[h] for h in range(24)]
-DEMAND_PROFILE_BY_AREA = [
-    [_w1[h] / _denom[h] for h in range(24)],
-    [_w2[h] / _denom[h] for h in range(24)],
-    [_w3[h] / _denom[h] for h in range(24)],
-]
+# 需要のエリア別プロファイル（24h、各時刻で5エリアの合計=1）: 形をエリアごとに変える
+# Area1=Night-heavy, Area2=Morning-heavy, Area3=Noon-heavy, Area4=Evening-heavy, Area5=Flat
+_w1 = [1.25, 1.22, 1.20, 1.18, 1.15, 1.10, 0.98, 0.90, 0.85, 0.82, 0.80, 0.80,
+       0.82, 0.84, 0.86, 0.90, 0.95, 1.00, 1.05, 1.08, 1.10, 1.12, 1.15, 1.18]
+_w2 = [0.85, 0.85, 0.86, 0.88, 0.92, 1.00, 1.15, 1.25, 1.30, 1.28, 1.22, 1.15,
+       1.08, 1.03, 1.00, 0.98, 0.96, 0.95, 0.95, 0.95, 0.94, 0.92, 0.90, 0.88]
+_w3 = [0.90, 0.90, 0.90, 0.92, 0.95, 1.00, 1.08, 1.15, 1.22, 1.28, 1.32, 1.35,
+       1.35, 1.32, 1.28, 1.22, 1.15, 1.08, 1.02, 0.98, 0.95, 0.94, 0.93, 0.92]
+_w4 = [0.95, 0.95, 0.95, 0.96, 0.98, 1.00, 1.02, 1.05, 1.10, 1.15, 1.18, 1.20,
+       1.18, 1.15, 1.12, 1.15, 1.25, 1.35, 1.40, 1.35, 1.25, 1.15, 1.05, 1.00]
+_w5 = [1.00] * 24
+_denom = [_w1[h] + _w2[h] + _w3[h] + _w4[h] + _w5[h] for h in range(24)]
+DEMAND_PROFILE_BY_AREA = [[w[h] / _denom[h] for h in range(24)] for w in [_w1, _w2, _w3, _w4, _w5]]
 
 # 需要（エリア別）: 全体需要 × エリア別プロファイル（形の差） × 配分のスケール
 # 配分 load_share_pct も反映するため、プロファイルと配分の両方で按分する
@@ -233,18 +232,15 @@ for t in range(T):
     d_total = DEMAND[t]
     h = (t % 24)
     # プロファイル（形）と配分（合計1）を組み合わせ: プロファイルで按分した後、配分で再スケール
-    p1 = DEMAND_PROFILE_BY_AREA[0][h] * (load_share_pct[0] / 100.0)
-    p2 = DEMAND_PROFILE_BY_AREA[1][h] * (load_share_pct[1] / 100.0)
-    p3 = DEMAND_PROFILE_BY_AREA[2][h] * (load_share_pct[2] / 100.0)
-    s = p1 + p2 + p3
+    p = [DEMAND_PROFILE_BY_AREA[a][h] * (load_share_pct[a] / 100.0) for a in range(N_AREAS)]
+    s = sum(p)
     if s <= 0:
         s = 1.0
-    d1 = int(round(d_total * p1 / s))
-    d2 = int(round(d_total * p2 / s))
-    d3 = d_total - d1 - d2
-    DEMAND_BY_AREA[AREAS[0]].append(d1)
-    DEMAND_BY_AREA[AREAS[1]].append(d2)
-    DEMAND_BY_AREA[AREAS[2]].append(d3)
+    d_alloc = [int(round(d_total * p[a] / s)) for a in range(N_AREAS - 1)]
+    d_last = d_total - sum(d_alloc)
+    d_alloc.append(d_last)
+    for a in range(N_AREAS):
+        DEMAND_BY_AREA[AREAS[a]].append(d_alloc[a])
 
 # 風力は太陽光スケールに依存しないので1回だけ構築（ループ外で参照用に1スケール分）
 WIND_AVAIL_BY_AREA = {AREAS[a]: [] for a in range(N_AREAS)}
@@ -270,13 +266,14 @@ GEN_TEMPLATE = [
     {"Pmin": 15, "Pmax": 60, "no_load": 80, "cost_per_mwh": 4200, "startup": 1500, "MUT": 4, "MDT": 4, "RU": 30, "RD": 30},
 ]
 GENS_PER_AREA = 10
-# エリア1: G1〜G10, エリア2: G11〜G20, エリア3: G21〜G30（各エリア10機）
-G_AREA1 = [f"G{i+1}" for i in range(GENS_PER_AREA)]
-G_AREA2 = [f"G{i+11}" for i in range(GENS_PER_AREA)]
-G_AREA3 = [f"G{i+21}" for i in range(GENS_PER_AREA)]
-G = G_AREA1 + G_AREA2 + G_AREA3
+# エリア別発電機（各エリア10機）: Area1=G1..G10, Area2=G11..G20, ..., Area5=G41..G50
+G_BY_AREA = []
+for a in range(N_AREAS):
+    start = a * GENS_PER_AREA + 1
+    G_BY_AREA.append([f"G{start + i}" for i in range(GENS_PER_AREA)])
+G = [g for area_gens in G_BY_AREA for g in area_gens]
 GEN_DATA = {}
-for area_idx, area_gens in enumerate([G_AREA1, G_AREA2, G_AREA3]):
+for area_idx, area_gens in enumerate(G_BY_AREA):
     for i, g in enumerate(area_gens):
         GEN_DATA[g] = dict(GEN_TEMPLATE[i])
 
@@ -292,22 +289,23 @@ BATT_SOC_MIN_FRAC = 0.1  # SOC 下限（容量比）
 BATT_SOC_MAX_FRAC = 0.9  # SOC 上限（容量比）
 BATT_E_INITIAL_FRAC = 0.5  # 初期・終端 SOC（容量比、サイクル維持）
 
-print("【3エリア構成】 トポロジー: Area1 — Area2 — Area3")
-print(f"  エリア1: 発電機 {G_AREA1}")
-print(f"  エリア2: 発電機 {G_AREA2}")
-print(f"  エリア3: 発電機 {G_AREA3}")
-print(f"  連系線 1-2, 2-3: 各 ±{F_MAX} MW")
+print("【5エリア構成】 Topology: Area1 — Area2 — Area3 — Area4 — Area5")
+for a in range(N_AREAS):
+    print(f"  {AREAS[a]}: Generators {G_BY_AREA[a]}")
+print(f"  Tie-lines: Area1—Area2—...—Area{N_AREAS} (each ±{F_MAX} MW)")
 print(f"  最低稼働機数: 各エリアで {MIN_COMMITTED} 機以上")
 print(f"  蓄電池: 各エリア {BATT_E_CAP} MWh, ±{BATT_P_MAX} MW, ηc={BATT_ETA_C}, ηd={BATT_ETA_D}, SOC {BATT_SOC_MIN_FRAC*100:.0f}〜{BATT_SOC_MAX_FRAC*100:.0f}%")
 print(f"  太陽光余剰（出力抑制）: {'許容' if ALLOW_SOLAR_CURTAIL == 1 else '許容しない（全量利用）'}")
-print(f"  需要: エリア別プロファイル+配分 {load_share_pct[0]:.0f}/{load_share_pct[1]:.0f}/{load_share_pct[2]:.0f}%")
-print(f"  太陽光設備: {solar_cap_pct[0]:.0f}/{solar_cap_pct[1]:.0f}/{solar_cap_pct[2]:.0f}%, 風力: {wind_cap_pct[0]:.0f}/{wind_cap_pct[1]:.0f}/{wind_cap_pct[2]:.0f}%")
+print("  Load share (%):", "/".join(f"{x:.0f}" for x in load_share_pct))
+print("  Solar capacity share (%):", "/".join(f"{x:.0f}" for x in solar_cap_pct))
+print("  Wind capacity share  (%):", "/".join(f"{x:.0f}" for x in wind_cap_pct))
 print("  曲線タイプ（1日目）:")
-print(f"    Solar: {[solar_types_by_area_day[a][0] for a in range(N_AREAS)]}  (Area1,2,3)")
-print(f"    Wind : {[wind_types_by_area_day[a][0] for a in range(N_AREAS)]}  (Area1,2,3)")
+print(f"    Solar: {[solar_types_by_area_day[a][0] for a in range(N_AREAS)]}  (Area1..Area{N_AREAS})")
+print(f"    Wind : {[wind_types_by_area_day[a][0] for a in range(N_AREAS)]}  (Area1..Area{N_AREAS})")
 print("【発電機 最低運転時間(MUT)・最低停止時間(MDT)】 全機 MUT=4 h, MDT=4 h")
-print("【発電機 最大出力 Pmax (MW)】 エリア1:", [GEN_DATA[g]["Pmax"] for g in G_AREA1])
-print("  エリア2:", [GEN_DATA[g]["Pmax"] for g in G_AREA2], "  エリア3:", [GEN_DATA[g]["Pmax"] for g in G_AREA3])
+print("【発電機 最大出力 Pmax (MW)】")
+for a in range(N_AREAS):
+    print(f"  {AREAS[a]}:", [GEN_DATA[g]["Pmax"] for g in G_BY_AREA[a]])
 max_total_capacity = sum(GEN_DATA[g]["Pmax"] for g in G)
 max_demand = max(DEMAND)
 # print(f"【需要スケール】       {DEMAND_SCALE} 倍")
@@ -355,8 +353,8 @@ u = LpVariable.dicts("u", (G, TIME), cat=LpBinary)
 v = LpVariable.dicts("v", (G, TIME), cat=LpBinary)
 w = LpVariable.dicts("w", (G, TIME), cat=LpBinary)
 P = LpVariable.dicts("P", (G, TIME), lowBound=0, cat=LpContinuous)
-f12 = LpVariable.dicts("f12", TIME, lowBound=-F_MAX, upBound=F_MAX, cat=LpContinuous)
-f23 = LpVariable.dicts("f23", TIME, lowBound=-F_MAX, upBound=F_MAX, cat=LpContinuous)
+# Tie-line flows: flow[i][t] is from Area{i} -> Area{i+1} (positive in that direction)
+flow = {i: LpVariable.dicts(f"f{i}{i+1}", TIME, lowBound=-F_MAX, upBound=F_MAX, cat=LpContinuous) for i in range(1, N_AREAS)}
 solar_used = LpVariable.dicts("solar_used", (AREAS, TIME), lowBound=0, cat=LpContinuous)
 # 蓄電池: SOC [MWh], 充電・放電 [MW], 放電モードフラグ (1=放電)
 E_batt = LpVariable.dicts("E_batt", (AREAS, TIME), lowBound=0, cat=LpContinuous)
@@ -377,40 +375,23 @@ for t in TIME:
             prob += solar_used[a][t] == SOLAR_AVAIL_BY_AREA[a][t - 1], f"SolarMustTake_{a}_{t}"
 
     # エリア別需給バランス（潮流・蓄電池込み: 放電は供給、充電は需要）
-    prob += (
-        lpSum(P[g][t] for g in G_AREA1)
-        + WIND_AVAIL_BY_AREA["Area1"][t - 1]
-        + solar_used["Area1"][t]
-        + P_discharge["Area1"][t]
-        - P_charge["Area1"][t]
-        - DEMAND_BY_AREA["Area1"][t - 1]
-        - f12[t]
-        == 0,
-        f"AreaBalance_1_{t}",
-    )
-    prob += (
-        lpSum(P[g][t] for g in G_AREA2)
-        + WIND_AVAIL_BY_AREA["Area2"][t - 1]
-        + solar_used["Area2"][t]
-        + P_discharge["Area2"][t]
-        - P_charge["Area2"][t]
-        - DEMAND_BY_AREA["Area2"][t - 1]
-        + f12[t]
-        - f23[t]
-        == 0,
-        f"AreaBalance_2_{t}",
-    )
-    prob += (
-        lpSum(P[g][t] for g in G_AREA3)
-        + WIND_AVAIL_BY_AREA["Area3"][t - 1]
-        + solar_used["Area3"][t]
-        + P_discharge["Area3"][t]
-        - P_charge["Area3"][t]
-        - DEMAND_BY_AREA["Area3"][t - 1]
-        + f23[t]
-        == 0,
-        f"AreaBalance_3_{t}",
-    )
+    # net_export = outflow - inflow, where flow[i] is Area{i}->Area{i+1}
+    for k in range(1, N_AREAS + 1):
+        area = AREAS[k - 1]
+        area_gens = G_BY_AREA[k - 1]
+        outflow = flow[k][t] if k <= N_AREAS - 1 else 0
+        inflow = flow[k - 1][t] if k >= 2 else 0
+        prob += (
+            lpSum(P[g][t] for g in area_gens)
+            + WIND_AVAIL_BY_AREA[area][t - 1]
+            + solar_used[area][t]
+            + P_discharge[area][t]
+            - P_charge[area][t]
+            - DEMAND_BY_AREA[area][t - 1]
+            - (outflow - inflow)
+            == 0,
+            f"AreaBalance_{k}_{t}",
+        )
 
 # 蓄電池: SOC ダイナミクス E(t) = E(t-1) + ηc*P_charge(t) - P_discharge(t)/ηd
 E_min = BATT_E_CAP * BATT_SOC_MIN_FRAC
@@ -439,7 +420,7 @@ for a in AREAS:
         prob += P_charge[a][t] <= BATT_P_MAX * (1 - delta_batt[a][t]), f"BattChargeMax_{a}_{t}"
 
 # 調整力: エリア別時刻別（各エリアの headroom >= 当該エリアの所要調整力）
-for a, area_gens in enumerate([G_AREA1, G_AREA2, G_AREA3]):
+for a, area_gens in enumerate(G_BY_AREA):
     for t in TIME:
         prob += (
             lpSum(GEN_DATA[g]["Pmax"] * u[g][t] - P[g][t] for g in area_gens) >= ADJ_REQUIRED_BY_AREA[a][t - 1],
@@ -448,11 +429,10 @@ for a, area_gens in enumerate([G_AREA1, G_AREA2, G_AREA3]):
 
 # 最低稼働機数: 各エリアで常に MIN_COMMITTED 機以上稼働
 for t in TIME:
-    prob += lpSum(u[g][t] for g in G_AREA1) >= MIN_COMMITTED, f"MinCommitted_Area1_{t}"
-    prob += lpSum(u[g][t] for g in G_AREA2) >= MIN_COMMITTED, f"MinCommitted_Area2_{t}"
-    prob += lpSum(u[g][t] for g in G_AREA3) >= MIN_COMMITTED, f"MinCommitted_Area3_{t}"
+    for a, area_gens in enumerate(G_BY_AREA):
+        prob += lpSum(u[g][t] for g in area_gens) >= MIN_COMMITTED, f"MinCommitted_{AREAS[a]}_{t}"
 
-# 連系線容量（変数の上下限制約として適用済み）: -F_MAX <= f12,f23 <= F_MAX
+# 連系線容量（変数の上下限制約として適用済み）: -F_MAX <= flow <= F_MAX
 
 for g in G:
     pmin, pmax = GEN_DATA[g]["Pmin"], GEN_DATA[g]["Pmax"]
@@ -502,9 +482,8 @@ else:
     else:
         print(f"  OK, 総コスト {value(prob.objective):,.0f} 円")
 
-        # 潮流の結果（連系線1-2, 2-3）
-        flow_12_vals = [value(f12[t]) for t in TIME]
-        flow_23_vals = [value(f23[t]) for t in TIME]
+        # 潮流の結果（Tie-lines: Area1-2, 2-3, ..., 4-5）
+        flow_vals = {i: [value(flow[i][t]) for t in TIME] for i in range(1, N_AREAS)}
         solar_used_vals_by_area = {a: [value(solar_used[a][t]) for t in TIME] for a in AREAS}
         solar_used_total = [sum(solar_used_vals_by_area[a][i] for a in AREAS) for i in range(T)]
         solar_avail_total = list(SOLAR_AVAIL_TOTAL)
@@ -512,47 +491,29 @@ else:
         time_display = list(TIME)[:HOURS_PER_DAY]
 
         # 各エリア需給バランス
-        gen1_vals = [sum(value(P[g][t]) for g in G_AREA1) for t in TIME]
-        gen2_vals = [sum(value(P[g][t]) for g in G_AREA2) for t in TIME]
-        gen3_vals = [sum(value(P[g][t]) for g in G_AREA3) for t in TIME]
+        gen_vals_by_area = {AREAS[a]: [sum(value(P[g][t]) for g in G_BY_AREA[a]) for t in TIME] for a in range(N_AREAS)}
         P_disch_vals = {a: [value(P_discharge[a][t]) for t in TIME] for a in AREAS}
         P_ch_vals = {a: [value(P_charge[a][t]) for t in TIME] for a in AREAS}
-        bal1_res = [
-            gen1_vals[t - 1]
-            + WIND_AVAIL_BY_AREA["Area1"][t - 1]
-            + solar_used_vals_by_area["Area1"][t - 1]
-            + P_disch_vals["Area1"][t - 1]
-            - P_ch_vals["Area1"][t - 1]
-            - DEMAND_BY_AREA["Area1"][t - 1]
-            - flow_12_vals[t - 1]
-            for t in TIME
-        ]
-        bal2_res = [
-            gen2_vals[t - 1]
-            + WIND_AVAIL_BY_AREA["Area2"][t - 1]
-            + solar_used_vals_by_area["Area2"][t - 1]
-            + P_disch_vals["Area2"][t - 1]
-            - P_ch_vals["Area2"][t - 1]
-            - DEMAND_BY_AREA["Area2"][t - 1]
-            + flow_12_vals[t - 1]
-            - flow_23_vals[t - 1]
-            for t in TIME
-        ]
-        bal3_res = [
-            gen3_vals[t - 1]
-            + WIND_AVAIL_BY_AREA["Area3"][t - 1]
-            + solar_used_vals_by_area["Area3"][t - 1]
-            + P_disch_vals["Area3"][t - 1]
-            - P_ch_vals["Area3"][t - 1]
-            - DEMAND_BY_AREA["Area3"][t - 1]
-            + flow_23_vals[t - 1]
-            for t in TIME
-        ]
-        max_abs_bal1 = max(abs(x) for x in bal1_res)
-        max_abs_bal2 = max(abs(x) for x in bal2_res)
-        max_abs_bal3 = max(abs(x) for x in bal3_res)
-        max_abs_f12 = max(abs(x) for x in flow_12_vals)
-        max_abs_f23 = max(abs(x) for x in flow_23_vals)
+        bal_res_by_area = {}
+        for k in range(1, N_AREAS + 1):
+            area = AREAS[k - 1]
+            bal_res_by_area[area] = []
+            for t in TIME:
+                outflow_t = flow_vals[k][t - 1] if k <= N_AREAS - 1 else 0.0
+                inflow_t = flow_vals[k - 1][t - 1] if k >= 2 else 0.0
+                bal_res_by_area[area].append(
+                    gen_vals_by_area[area][t - 1]
+                    + WIND_AVAIL_BY_AREA[area][t - 1]
+                    + solar_used_vals_by_area[area][t - 1]
+                    + P_disch_vals[area][t - 1]
+                    - P_ch_vals[area][t - 1]
+                    - DEMAND_BY_AREA[area][t - 1]
+                    - (outflow_t - inflow_t)
+                )
+        max_abs_bal_by_area = {a: max(abs(x) for x in bal_res_by_area[a]) for a in AREAS}
+        max_abs_bal = max(max_abs_bal_by_area.values()) if max_abs_bal_by_area else 0.0
+        max_abs_flow_by_line = {f"{i}-{i+1}": max(abs(x) for x in flow_vals[i]) for i in range(1, N_AREAS)}
+        max_abs_flow = max(max_abs_flow_by_line.values()) if max_abs_flow_by_line else 0.0
         cost_fuel = sum(GEN_DATA[g]["cost_per_mwh"] * value(P[g][t]) for g in G for t in TIME)
         cost_noload = sum(GEN_DATA[g]["no_load"] * value(u[g][t]) for g in G for t in TIME)
         cost_start = sum(GEN_DATA[g]["startup"] * value(v[g][t]) for g in G for t in TIME)
@@ -562,8 +523,7 @@ else:
         solar_avail_arr = np.array(solar_avail_total, dtype=float)
         solar_arr = np.array(solar_used_total, dtype=float)
         wind_arr = np.array(wind_total, dtype=float)
-        flow_12_arr = np.array(flow_12_vals)
-        flow_23_arr = np.array(flow_23_vals)
+        flow_arr = {i: np.array(flow_vals[i], dtype=float) for i in range(1, N_AREAS)}
 
         def _arr(x):
             return np.array(x, dtype=float)
@@ -571,9 +531,8 @@ else:
         solar_used_by_area = {a: _arr(solar_used_vals_by_area[a]) for a in AREAS}
         solar_avail_by_area = {a: _arr(SOLAR_AVAIL_BY_AREA[a]) for a in AREAS}
         wind_by_area = {a: _arr(WIND_AVAIL_BY_AREA[a]) for a in AREAS}
-        thermal_by_area = {"Area1": _arr(gen1_vals), "Area2": _arr(gen2_vals), "Area3": _arr(gen3_vals)}
+        thermal_by_area = {AREAS[a]: _arr(gen_vals_by_area[AREAS[a]]) for a in range(N_AREAS)}
         net_load_by_area = {a: demand_by_area[a] - solar_used_by_area[a] - wind_by_area[a] for a in AREAS}
-        G_BY_AREA = [G_AREA1, G_AREA2, G_AREA3]
         p_by_area = [np.array([[value(P[g][t]) for t in TIME] for g in G_BY_AREA[a]]) for a in range(N_AREAS)]
         u_by_area = [np.array([[int(value(u[g][t])) for t in TIME] for g in G_BY_AREA[a]]) for a in range(N_AREAS)]
         reserve_by_area = [
@@ -586,45 +545,38 @@ else:
 
         _colors_all = [plt.cm.tab10(i % 10) for i in range(len(G))]
         colors_by_area = [[_colors_all[G.index(g)] for g in G_BY_AREA[a]] for a in range(N_AREAS)]
-        supply_target_by_area = {
-            "Area1": demand_by_area["Area1"] + flow_12_arr,
-            "Area2": demand_by_area["Area2"] + (flow_23_arr - flow_12_arr),
-            "Area3": demand_by_area["Area3"] - flow_23_arr,
-        }
-        tie_receive_area1 = -flow_12_arr
-        tie_receive_area2_from1 = flow_12_arr
-        tie_receive_area2_from3 = -flow_23_arr
-        tie_receive_area3 = flow_23_arr
+        supply_target_by_area = {}
+        tie_receive_by_area = {}
+        for k in range(1, N_AREAS + 1):
+            area = AREAS[k - 1]
+            outflow_k = flow_arr[k] if k <= N_AREAS - 1 else 0.0
+            inflow_k = flow_arr[k - 1] if k >= 2 else 0.0
+            # supply target = demand + net_export (outflow - inflow)
+            supply_target_by_area[area] = demand_by_area[area] + (outflow_k - inflow_k)
+            # tie receive (import positive) = inflow - outflow
+            tie_receive_by_area[area] = inflow_k - outflow_k
 
         # 条件図（エリア別需要・太陽光・風力プロファイル）
         hours_24 = list(range(1, min(25, T + 1)))
-        d_a1 = [DEMAND_BY_AREA["Area1"][t - 1] for t in hours_24]
-        d_a2 = [DEMAND_BY_AREA["Area2"][t - 1] for t in hours_24]
-        d_a3 = [DEMAND_BY_AREA["Area3"][t - 1] for t in hours_24]
-        s_a1 = [SOLAR_AVAIL_BY_AREA["Area1"][t - 1] for t in hours_24]
-        s_a2 = [SOLAR_AVAIL_BY_AREA["Area2"][t - 1] for t in hours_24]
-        s_a3 = [SOLAR_AVAIL_BY_AREA["Area3"][t - 1] for t in hours_24]
-        w_a1 = [WIND_AVAIL_BY_AREA["Area1"][t - 1] for t in hours_24]
-        w_a2 = [WIND_AVAIL_BY_AREA["Area2"][t - 1] for t in hours_24]
-        w_a3 = [WIND_AVAIL_BY_AREA["Area3"][t - 1] for t in hours_24]
+        d_24_by_area = {a: [DEMAND_BY_AREA[a][t - 1] for t in hours_24] for a in AREAS}
+        s_24_by_area = {a: [SOLAR_AVAIL_BY_AREA[a][t - 1] for t in hours_24] for a in AREAS}
+        w_24_by_area = {a: [WIND_AVAIL_BY_AREA[a][t - 1] for t in hours_24] for a in AREAS}
         fig_cond, axc = plt.subplots(3, 1, figsize=(8, 6), sharex=True)
-        axc[0].plot(hours_24, d_a1, "-", color="C0", linewidth=1.2, label="Area1")
-        axc[0].plot(hours_24, d_a2, "-", color="C2", linewidth=1.2, label="Area2")
-        axc[0].plot(hours_24, d_a3, "-", color="C4", linewidth=1.2, label="Area3")
+        colors_area = [f"C{i}" for i in range(N_AREAS)]
+        for i, a in enumerate(AREAS):
+            axc[0].plot(hours_24, d_24_by_area[a], "-", color=colors_area[i % len(colors_area)], linewidth=1.2, label=a)
         axc[0].set_ylabel("Demand (MW)")
         axc[0].legend(loc="upper right", fontsize=8)
         axc[0].grid(True, alpha=0.3)
         axc[0].set_title("Demand by area", fontsize=11)
-        axc[1].plot(hours_24, s_a1, "-", color="C0", linewidth=1.2, label="Area1")
-        axc[1].plot(hours_24, s_a2, "-", color="C2", linewidth=1.2, label="Area2")
-        axc[1].plot(hours_24, s_a3, "-", color="C4", linewidth=1.2, label="Area3")
+        for i, a in enumerate(AREAS):
+            axc[1].plot(hours_24, s_24_by_area[a], "-", color=colors_area[i % len(colors_area)], linewidth=1.2, label=a)
         axc[1].set_ylabel("Solar available (MW)")
         axc[1].set_title("Solar available by area", fontsize=11)
         axc[1].legend(loc="upper right", fontsize=8)
         axc[1].grid(True, alpha=0.3)
-        axc[2].plot(hours_24, w_a1, "-", color="C0", linewidth=1.2, label="Area1")
-        axc[2].plot(hours_24, w_a2, "-", color="C2", linewidth=1.2, label="Area2")
-        axc[2].plot(hours_24, w_a3, "-", color="C4", linewidth=1.2, label="Area3")
+        for i, a in enumerate(AREAS):
+            axc[2].plot(hours_24, w_24_by_area[a], "-", color=colors_area[i % len(colors_area)], linewidth=1.2, label=a)
         axc[2].set_ylabel("Wind available (MW)")
         axc[2].set_xlabel("Time (h)")
         axc[2].set_title("Wind available by area", fontsize=11)
@@ -640,10 +592,10 @@ else:
         from matplotlib.gridspec import GridSpec
         from matplotlib.lines import Line2D
         from matplotlib.patches import Patch
-        fig = plt.figure(figsize=(max(15, T * 0.22), 14))
-        gs = GridSpec(5, 4, figure=fig, width_ratios=[1, 1, 1, 0.35])
-        axes = [[fig.add_subplot(gs[r, c]) for c in range(3)] for r in range(5)]
-        axes_legend = [fig.add_subplot(gs[r, 3]) for r in range(5)]
+        fig = plt.figure(figsize=(max(18, T * 0.22), 14))
+        gs = GridSpec(5, N_AREAS + 1, figure=fig, width_ratios=[1] * N_AREAS + [0.35])
+        axes = [[fig.add_subplot(gs[r, c]) for c in range(N_AREAS)] for r in range(5)]
+        axes_legend = [fig.add_subplot(gs[r, N_AREAS]) for r in range(5)]
 
         def _vline_day(ax):
             if DAYS > 1:
@@ -675,12 +627,7 @@ else:
             _vline_day(ax)
             ax = axes[1][col]
             supply_target = supply_target_by_area[area_name]
-            if col == 0:
-                tie_receive_arr = tie_receive_area1
-            elif col == 1:
-                tie_receive_arr = tie_receive_area2_from1 + tie_receive_area2_from3
-            else:
-                tie_receive_arr = tie_receive_area3
+            tie_receive_arr = tie_receive_by_area[area_name]
             bottom = np.zeros_like(tie_receive_arr, dtype=float)
             ax.fill_between(hours, bottom, tie_receive_arr, alpha=0.6, color="purple", label="Tie receive")
             bottom = np.array(tie_receive_arr, dtype=float)
@@ -729,24 +676,18 @@ else:
             ax.axhline(F_MAX, color="red", linestyle="--", linewidth=0.8, alpha=0.8)
             ax.axhline(-F_MAX, color="red", linestyle="--", linewidth=0.8, alpha=0.8)
             ax.axhline(0, color="black", linewidth=0.5)
-            if col == 0:
-                ax.plot(hours, tie_receive_area1, "-", color="navy", linewidth=1.2, label="Tie receive")
-            elif col == 1:
-                ax.plot(hours, tie_receive_area2_from1, "-", color="navy", linewidth=1.0, label="Receive from Area1")
-                ax.plot(hours, tie_receive_area2_from3, "-", color="darkgreen", linewidth=1.0, label="Receive from Area3")
-            else:
-                ax.plot(hours, tie_receive_area3, "-", color="darkgreen", linewidth=1.2, label="Tie receive")
+            ax.plot(hours, tie_receive_by_area[area_name], "-", color="navy", linewidth=1.2, label="Net tie import")
             ax.set_ylabel("Tie receive (MW)\n(positive=import)")
             ax.set_title(f"{area_name}  Tie-Line")
             ax.grid(True, alpha=0.3)
             ax.set_xlim(0.5, T + 0.5)
             _vline_day(ax)
-        for col in range(3):
+        for col in range(N_AREAS):
             axes[4][col].set_xlabel("Time (h)")
         step = max(1, (T // 24)) * 6
         xticks = list(range(1, T + 1, step))
         for row in range(5):
-            for col in range(3):
+            for col in range(N_AREAS):
                 axes[row][col].set_xticks(xticks)
                 axes[row][col].set_xticklabels(xticks)
         ax = axes_legend[0]
@@ -788,8 +729,7 @@ else:
         ax = axes_legend[4]
         ax.axis("off")
         ax.legend(handles=[
-            Line2D([0], [0], color="navy", linewidth=1.2, label="Tie receive / from Area1"),
-            Line2D([0], [0], color="darkgreen", linewidth=1.2, label="Tie receive / from Area3"),
+            Line2D([0], [0], color="navy", linewidth=1.2, label="Net tie import"),
             Line2D([0], [0], color="red", linestyle="--", linewidth=0.8, label=f"±F_max ({F_MAX} MW)"),
         ], loc="center", fontsize=7, frameon=True)
         plt.tight_layout()
@@ -800,23 +740,22 @@ else:
         result_b64 = base64.b64encode(buf_result.read()).decode("ascii")
         runs.append({
             "scale": 1.0,
-        "status": LpStatus[prob.status],
-        "cond_b64": cond_b64,
-        "result_b64": result_b64,
-        "cost": value(prob.objective),
-        "cost_fuel": cost_fuel,
-        "cost_noload": cost_noload,
-        "cost_start": cost_start,
-        "max_abs_bal1": max_abs_bal1,
-        "max_abs_bal2": max_abs_bal2,
-        "max_abs_bal3": max_abs_bal3,
-        "max_abs_f12": max_abs_f12,
-        "max_abs_f23": max_abs_f23,
-        "solar_avail_total": list(solar_avail_total),
-        "solar_used_total": list(solar_used_total),
-        "adjustment_by_area": [np.array(adjustment_by_area[a]) for a in range(N_AREAS)],
-        "adj_required_by_area": [np.array(adj_required_by_area[a]) for a in range(N_AREAS)],
-    })
+            "status": LpStatus[prob.status],
+            "cond_b64": cond_b64,
+            "result_b64": result_b64,
+            "cost": value(prob.objective),
+            "cost_fuel": cost_fuel,
+            "cost_noload": cost_noload,
+            "cost_start": cost_start,
+            "max_abs_bal_by_area": dict(max_abs_bal_by_area),
+            "max_abs_bal": float(max_abs_bal),
+            "max_abs_flow_by_line": dict(max_abs_flow_by_line),
+            "max_abs_flow": float(max_abs_flow),
+            "solar_avail_total": list(solar_avail_total),
+            "solar_used_total": list(solar_used_total),
+            "adjustment_by_area": [np.array(adjustment_by_area[a]) for a in range(N_AREAS)],
+            "adj_required_by_area": [np.array(adj_required_by_area[a]) for a in range(N_AREAS)],
+        })
 
 print("SCUC 完了。HTMLレポートを生成します。")
 
@@ -825,9 +764,9 @@ print("SCUC 完了。HTMLレポートを生成します。")
 # ---------------------------------------------------------------------------
 ts = datetime.now().strftime("%y%m%d%H%M%S")
 cond = f"{DAYS}d_s{SEASON}_m{RENEW_MODE}"
-cond += f"_load{int(load_share_pct[0])}{int(load_share_pct[1])}{int(load_share_pct[2])}"
-cond += f"_scap{int(solar_cap_pct[0])}{int(solar_cap_pct[1])}{int(solar_cap_pct[2])}"
-cond += f"_wcap{int(wind_cap_pct[0])}{int(wind_cap_pct[1])}{int(wind_cap_pct[2])}"
+cond += "_load" + "".join(str(int(x)) for x in load_share_pct)
+cond += "_scap" + "".join(str(int(x)) for x in solar_cap_pct)
+cond += "_wcap" + "".join(str(int(x)) for x in wind_cap_pct)
 cond += f"_solarA{''.join(str(solar_types_by_area_day[a][0]) for a in range(N_AREAS))}"
 cond += f"_windA{''.join(str(wind_types_by_area_day[a][0]) for a in range(N_AREAS))}"
 if DAYS > 1 and RENEW_MODE != 1:
@@ -840,26 +779,21 @@ def _build_report_html(runs):
     season_name = {1: "Spring/Autumn", 2: "Summer", 3: "Winter"}.get(SEASON, str(SEASON))
     method_html = r"""
     <h2>Simulation method (数式)</h2>
-    <p>3エリア SCUC: 決定変数・目的関数・制約を以下で定義する。</p>
-    <p><strong>集合・添字:</strong> エリア \(a \in \{1,2,3\}\)、発電機 \(g \in \mathcal{G}\)、時刻 \(t \in \mathcal{T}\)。\(\mathcal{G}_a\) はエリア \(a\) の発電機集合。</p>
+    <p>5-area SCUC: 決定変数・目的関数・制約を以下で定義する。</p>
+    <p><strong>集合・添字:</strong> エリア \(a \in \mathcal{A}\)、発電機 \(g \in \mathcal{G}\)、時刻 \(t \in \mathcal{T}\)。\(\mathcal{G}_a\) はエリア \(a\) の発電機集合。</p>
     <p><strong>目的関数（最小化）:</strong></p>
     \[
     \min \sum_{t \in \mathcal{T}} \sum_{g \in \mathcal{G}} \left( c_g^{\mathrm{fuel}} P_{g,t} + c_g^{\mathrm{noload}} u_{g,t} + c_g^{\mathrm{start}} v_{g,t} \right)
     \]
     <p><strong>需給バランス（エリア別）:</strong></p>
     \[
-    \sum_{g \in \mathcal{G}_1} P_{g,t} + W_{1,t} + S_{1,t} = D_{1,t} + f_{12,t}
-    \quad,\quad
-    \sum_{g \in \mathcal{G}_2} P_{g,t} + W_{2,t} + S_{2,t} = D_{2,t} - f_{12,t} + f_{23,t}
-    \quad,\quad
-    \sum_{g \in \mathcal{G}_3} P_{g,t} + W_{3,t} + S_{3,t} = D_{3,t} - f_{23,t}
+    \sum_{g \in \mathcal{G}_a} P_{g,t} + W_{a,t} + S_{a,t} + P^{\mathrm{disch}}_{a,t} - P^{\mathrm{ch}}_{a,t}
+    = D_{a,t} + \mathrm{net\_export}_{a,t}
     \]
-    <p>（\(W_{a,t}, S_{a,t}\): 風力・太陽光利用量、\(D_{a,t}\): 需要、\(f_{12,t}, f_{23,t}\): 連系線潮流。正の方向は 1→2, 2→3。）</p>
+    <p>（\(\mathrm{net\_export}_{a,t}=\mathrm{outflow}_{a,t}-\mathrm{inflow}_{a,t}\)。連系線潮流は隣接エリア間で定義し、各線で \(|f_{\ell,t}|\le F_{\max}\) を課す。）</p>
     <p><strong>連系線制約:</strong></p>
     \[
-    -F_{\max} \le f_{12,t} \le F_{\max}
-    \quad,\quad
-    -F_{\max} \le f_{23,t} \le F_{\max}
+    -F_{\max} \le f_{\ell,t} \le F_{\max}\quad(\forall \ell, t)
     \]
     <p><strong>調整力（エリア別）:</strong></p>
     \[
@@ -904,25 +838,22 @@ def _build_report_html(runs):
     for run in runs:
         cost = run.get("cost")
         cost_str = f"{cost:,.0f}" if cost is not None else "—"
-        mf12 = run.get("max_abs_f12")
-        mf23 = run.get("max_abs_f23")
-        util_f12 = (mf12 / F_MAX * 100) if (F_MAX and mf12 is not None) else 0
-        util_f23 = (mf23 / F_MAX * 100) if (F_MAX and mf23 is not None) else 0
-        mf12_s = f"{mf12:.1f}" if mf12 is not None else "—"
-        mf23_s = f"{mf23:.1f}" if mf23 is not None else "—"
+        mf = run.get("max_abs_flow")
+        util_f = (mf / F_MAX * 100) if (F_MAX and mf is not None) else 0
+        mf_s = f"{mf:.1f}" if mf is not None else "—"
         savail = run.get("solar_avail_total") or []
         sused = run.get("solar_used_total") or []
         curt = sum(max(0, (savail[t] if t < len(savail) else 0) - (sused[t] if t < len(sused) else 0)) for t in range(T))
         avail_sum = sum(savail) if savail else 0
         curt_pct = (curt / avail_sum * 100) if avail_sum else 0
-        rows.append(f"      <tr><td>{cost_str}</td><td>{mf12_s}</td><td>{util_f12:.0f}%</td><td>{mf23_s}</td><td>{util_f23:.0f}%</td><td>{curt:.1f}</td><td>{curt_pct:.1f}%</td></tr>")
+        rows.append(f"      <tr><td>{cost_str}</td><td>{mf_s}</td><td>{util_f:.0f}%</td><td>{curt:.1f}</td><td>{curt_pct:.1f}%</td></tr>")
     table_rows = "\n".join(rows)
     consideration_html = f"""
     <h2>考察（Consideration）</h2>
     <h3>結果サマリ</h3>
     <div class="scroll-wrap">
     <table class="data-table">
-      <thead><tr><th>Total cost (JPY)</th><th>|F12| max (MW)</th><th>F12 util %</th><th>|F23| max (MW)</th><th>F23 util %</th><th>Solar curt (MW)</th><th>Curt %</th></tr></thead>
+      <thead><tr><th>Total cost (JPY)</th><th>Max |flow| (MW)</th><th>Max flow util %</th><th>Solar curt (MW)</th><th>Curt %</th></tr></thead>
       <tbody>
 {table_rows}
       </tbody>
