@@ -265,7 +265,7 @@ GEN_TEMPLATE = [
     {"Pmin": 45, "Pmax": 180, "no_load": 420, "cost_per_mwh": 2900, "startup": 7000, "MUT": 4, "MDT": 4, "RU": 70, "RD": 70},
     {"Pmin": 15, "Pmax": 60, "no_load": 80, "cost_per_mwh": 4200, "startup": 1500, "MUT": 4, "MDT": 4, "RU": 30, "RD": 30},
 ]
-GENS_PER_AREA = 10
+GENS_PER_AREA = 20
 # エリア別発電機（各エリア10機）: Area1=G1..G10, Area2=G11..G20, ..., Area5=G41..G50
 G_BY_AREA = []
 for a in range(N_AREAS):
@@ -275,7 +275,7 @@ G = [g for area_gens in G_BY_AREA for g in area_gens]
 GEN_DATA = {}
 for area_idx, area_gens in enumerate(G_BY_AREA):
     for i, g in enumerate(area_gens):
-        GEN_DATA[g] = dict(GEN_TEMPLATE[i])
+        GEN_DATA[g] = dict(GEN_TEMPLATE[i % len(GEN_TEMPLATE)])
 
 U0 = {g: 0 for g in G}
 MIN_COMMITTED = 3  # 各エリアで常にこの機数以上稼働
