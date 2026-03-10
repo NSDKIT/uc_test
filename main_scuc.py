@@ -107,7 +107,7 @@ def input_pct_list(prompt, default_list, n_items):
 print("=" * 60)
 print("保安制約付きUC（SCUC）3エリア パラメータ入力")
 print("=" * 60)
-DAYS = input_int("解析対象日数（日） [1-7, 省略=1]: ", 1, 1, 7)
+DAYS = input_int("解析対象日数（日） [1-365, 省略=1]: ", 1, 1, 365)
 
 RENEW_MODE = 1
 if DAYS >= 2:
@@ -518,23 +518,25 @@ else:
         cost_noload = sum(GEN_DATA[g]["no_load"] * value(u[g][t]) for g in G for t in TIME)
         cost_start = sum(GEN_DATA[g]["startup"] * value(v[g][t]) for g in G for t in TIME)
 
-        hours = list(TIME)
-        demand_arr = np.array(DEMAND, dtype=float)
-        solar_avail_arr = np.array(solar_avail_total, dtype=float)
-        solar_arr = np.array(solar_used_total, dtype=float)
-        wind_arr = np.array(wind_total, dtype=float)
-        flow_arr = {i: np.array(flow_vals[i], dtype=float) for i in range(1, N_AREAS)}
+        # 可視化の負荷を抑えるため、プロットは先頭の一部期間のみ（例: 最大 7 日 = 168h）
+        T_PLOT = min(T, 24 * 7)
+        hours = list(range(1, T_PLOT + 1))
+        demand_arr = np.array(DEMAND[:T_PLOT], dtype=float)
+        solar_avail_arr = np.array(solar_avail_total[:T_PLOT], dtype=float)
+        solar_arr = np.array(solar_used_total[:T_PLOT], dtype=float)
+        wind_arr = np.array(wind_total[:T_PLOT], dtype=float)
+        flow_arr = {i: np.array(flow_vals[i][:T_PLOT], dtype=float) for i in range(1, N_AREAS)}
 
         def _arr(x):
             return np.array(x, dtype=float)
-        demand_by_area = {a: _arr(DEMAND_BY_AREA[a]) for a in AREAS}
-        solar_used_by_area = {a: _arr(solar_used_vals_by_area[a]) for a in AREAS}
-        solar_avail_by_area = {a: _arr(SOLAR_AVAIL_BY_AREA[a]) for a in AREAS}
-        wind_by_area = {a: _arr(WIND_AVAIL_BY_AREA[a]) for a in AREAS}
-        thermal_by_area = {AREAS[a]: _arr(gen_vals_by_area[AREAS[a]]) for a in range(N_AREAS)}
+        demand_by_area = {a: _arr(DEMAND_BY_AREA[a][:T_PLOT]) for a in AREAS}
+        solar_used_by_area = {a: _arr(solar_used_vals_by_area[a][:T_PLOT]) for a in AREAS}
+        solar_avail_by_area = {a: _arr(SOLAR_AVAIL_BY_AREA[a][:T_PLOT]) for a in AREAS}
+        wind_by_area = {a: _arr(WIND_AVAIL_BY_AREA[a][:T_PLOT]) for a in AREAS}
+        thermal_by_area = {AREAS[a]: _arr(gen_vals_by_area[AREAS[a]][:T_PLOT]) for a in range(N_AREAS)}
         net_load_by_area = {a: demand_by_area[a] - solar_used_by_area[a] - wind_by_area[a] for a in AREAS}
-        p_by_area = [np.array([[value(P[g][t]) for t in TIME] for g in G_BY_AREA[a]]) for a in range(N_AREAS)]
-        u_by_area = [np.array([[int(value(u[g][t])) for t in TIME] for g in G_BY_AREA[a]]) for a in range(N_AREAS)]
+        p_by_area = [np.array([[value(P[g][t]) for t in range(1, T_PLOT + 1)] for g in G_BY_AREA[a]]) for a in range(N_AREAS)]
+        u_by_area = [np.array([[int(value(u[g][t])) for t in range(1, T_PLOT + 1)] for g in G_BY_AREA[a]]) for a in range(N_AREAS)]
         reserve_by_area = [
             (np.array([GEN_DATA[g]["Pmax"] for g in G_BY_AREA[a]])[:, np.newaxis] * u_by_area[a]).sum(axis=0)
             for a in range(N_AREAS)
@@ -592,7 +594,7 @@ else:
         from matplotlib.gridspec import GridSpec
         from matplotlib.lines import Line2D
         from matplotlib.patches import Patch
-        fig = plt.figure(figsize=(max(18, T * 0.22), 14))
+        fig = plt.figure(figsize=(max(18, T_PLOT * 0.22), 14))
         gs = GridSpec(5, N_AREAS + 1, figure=fig, width_ratios=[1] * N_AREAS + [0.35])
         axes = [[fig.add_subplot(gs[r, c]) for c in range(N_AREAS)] for r in range(5)]
         axes_legend = [fig.add_subplot(gs[r, N_AREAS]) for r in range(5)]
