@@ -1,13 +1,14 @@
 """
-保安制約付き発電機起動停止計画（SCUC）の例題 — 3エリア版
+保安制約付き発電機起動停止計画（SCUC）の例題 — 3エリア版・蓄電池付き
 
-- エリア1: 発電機 G1〜G10（10機）、純負荷の一部
-- エリア2: 発電機 G11〜G20（10機）、純負荷の一部
-- エリア3: 発電機 G21〜G30（10機）、純負荷の残り
+- エリア1: 発電機 G1〜G10（10機）、蓄電池1台、純負荷の一部
+- エリア2: 発電機 G11〜G20（10機）、蓄電池1台、純負荷の一部
+- エリア3: 発電機 G21〜G30（10機）、蓄電池1台、純負荷の残り
 - 連系線: 直列トポロジー エリア1—エリア2—エリア3（2本の連系線、DC潮流）
   - 連系線1-2: 潮流 = エリア1の発電 − エリア1の純負荷
   - 連系線2-3: 潮流 = (エリア1+エリア2の発電) − (エリア1+エリア2の純負荷)
 - 制約: 各連系線の潮流が ±F_max 以内
+- 蓄電池: 各エリアに1台。SOC ダイナミクス・充放電上下限・充放電排他制約。
 """
 
 import os
@@ -282,12 +283,22 @@ for area_idx, area_gens in enumerate([G_AREA1, G_AREA2, G_AREA3]):
 U0 = {g: 0 for g in G}
 MIN_COMMITTED = 3  # 各エリアで常にこの機数以上稼働
 
+# 蓄電池パラメータ（各エリア1台、同一仕様）
+BATT_E_CAP = 200.0       # 容量 [MWh]
+BATT_P_MAX = 50.0        # 最大充放電 [MW]（充電・放電とも同値）
+BATT_ETA_C = 0.95        # 充電効率
+BATT_ETA_D = 0.95        # 放電効率
+BATT_SOC_MIN_FRAC = 0.1  # SOC 下限（容量比）
+BATT_SOC_MAX_FRAC = 0.9  # SOC 上限（容量比）
+BATT_E_INITIAL_FRAC = 0.5  # 初期・終端 SOC（容量比、サイクル維持）
+
 print("【3エリア構成】 トポロジー: Area1 — Area2 — Area3")
 print(f"  エリア1: 発電機 {G_AREA1}")
 print(f"  エリア2: 発電機 {G_AREA2}")
 print(f"  エリア3: 発電機 {G_AREA3}")
 print(f"  連系線 1-2, 2-3: 各 ±{F_MAX} MW")
 print(f"  最低稼働機数: 各エリアで {MIN_COMMITTED} 機以上")
+print(f"  蓄電池: 各エリア {BATT_E_CAP} MWh, ±{BATT_P_MAX} MW, ηc={BATT_ETA_C}, ηd={BATT_ETA_D}, SOC {BATT_SOC_MIN_FRAC*100:.0f}〜{BATT_SOC_MAX_FRAC*100:.0f}%")
 print(f"  太陽光余剰（出力抑制）: {'許容' if ALLOW_SOLAR_CURTAIL == 1 else '許容しない（全量利用）'}")
 print(f"  需要: エリア別プロファイル+配分 {load_share_pct[0]:.0f}/{load_share_pct[1]:.0f}/{load_share_pct[2]:.0f}%")
 print(f"  太陽光設備: {solar_cap_pct[0]:.0f}/{solar_cap_pct[1]:.0f}/{solar_cap_pct[2]:.0f}%, 風力: {wind_cap_pct[0]:.0f}/{wind_cap_pct[1]:.0f}/{wind_cap_pct[2]:.0f}%")
@@ -347,6 +358,11 @@ P = LpVariable.dicts("P", (G, TIME), lowBound=0, cat=LpContinuous)
 f12 = LpVariable.dicts("f12", TIME, lowBound=-F_MAX, upBound=F_MAX, cat=LpContinuous)
 f23 = LpVariable.dicts("f23", TIME, lowBound=-F_MAX, upBound=F_MAX, cat=LpContinuous)
 solar_used = LpVariable.dicts("solar_used", (AREAS, TIME), lowBound=0, cat=LpContinuous)
+# 蓄電池: SOC [MWh], 充電・放電 [MW], 放電モードフラグ (1=放電)
+E_batt = LpVariable.dicts("E_batt", (AREAS, TIME), lowBound=0, cat=LpContinuous)
+P_charge = LpVariable.dicts("P_charge", (AREAS, TIME), lowBound=0, upBound=BATT_P_MAX, cat=LpContinuous)
+P_discharge = LpVariable.dicts("P_discharge", (AREAS, TIME), lowBound=0, upBound=BATT_P_MAX, cat=LpContinuous)
+delta_batt = LpVariable.dicts("delta_batt", (AREAS, TIME), cat=LpBinary)
 
 prob += lpSum(
     GEN_DATA[g]["cost_per_mwh"] * P[g][t] + GEN_DATA[g]["no_load"] * u[g][t] + GEN_DATA[g]["startup"] * v[g][t]
@@ -360,11 +376,13 @@ for t in TIME:
         if ALLOW_SOLAR_CURTAIL != 1:
             prob += solar_used[a][t] == SOLAR_AVAIL_BY_AREA[a][t - 1], f"SolarMustTake_{a}_{t}"
 
-    # エリア別需給バランス（潮流込み）
+    # エリア別需給バランス（潮流・蓄電池込み: 放電は供給、充電は需要）
     prob += (
         lpSum(P[g][t] for g in G_AREA1)
         + WIND_AVAIL_BY_AREA["Area1"][t - 1]
         + solar_used["Area1"][t]
+        + P_discharge["Area1"][t]
+        - P_charge["Area1"][t]
         - DEMAND_BY_AREA["Area1"][t - 1]
         - f12[t]
         == 0,
@@ -374,6 +392,8 @@ for t in TIME:
         lpSum(P[g][t] for g in G_AREA2)
         + WIND_AVAIL_BY_AREA["Area2"][t - 1]
         + solar_used["Area2"][t]
+        + P_discharge["Area2"][t]
+        - P_charge["Area2"][t]
         - DEMAND_BY_AREA["Area2"][t - 1]
         + f12[t]
         - f23[t]
@@ -384,11 +404,39 @@ for t in TIME:
         lpSum(P[g][t] for g in G_AREA3)
         + WIND_AVAIL_BY_AREA["Area3"][t - 1]
         + solar_used["Area3"][t]
+        + P_discharge["Area3"][t]
+        - P_charge["Area3"][t]
         - DEMAND_BY_AREA["Area3"][t - 1]
         + f23[t]
         == 0,
         f"AreaBalance_3_{t}",
     )
+
+# 蓄電池: SOC ダイナミクス E(t) = E(t-1) + ηc*P_charge(t) - P_discharge(t)/ηd
+E_min = BATT_E_CAP * BATT_SOC_MIN_FRAC
+E_max = BATT_E_CAP * BATT_SOC_MAX_FRAC
+E_initial = BATT_E_CAP * BATT_E_INITIAL_FRAC
+E_final = E_initial
+for a in AREAS:
+    t = 1
+    prob += (
+        E_batt[a][t] == E_initial + BATT_ETA_C * P_charge[a][t] - P_discharge[a][t] / BATT_ETA_D,
+        f"BattSOC_{a}_{t}",
+    )
+    for t in range(2, T + 1):
+        prob += (
+            E_batt[a][t] == E_batt[a][t - 1] + BATT_ETA_C * P_charge[a][t] - P_discharge[a][t] / BATT_ETA_D,
+            f"BattSOC_{a}_{t}",
+        )
+    for t in TIME:
+        prob += E_batt[a][t] >= E_min, f"BattSOCmin_{a}_{t}"
+        prob += E_batt[a][t] <= E_max, f"BattSOCmax_{a}_{t}"
+    prob += E_batt[a][T] >= E_final, f"BattSOCfinal_{a}"
+# 充放電排他: 放電時 delta=1, 充電時 delta=0
+for a in AREAS:
+    for t in TIME:
+        prob += P_discharge[a][t] <= BATT_P_MAX * delta_batt[a][t], f"BattDischMax_{a}_{t}"
+        prob += P_charge[a][t] <= BATT_P_MAX * (1 - delta_batt[a][t]), f"BattChargeMax_{a}_{t}"
 
 # 調整力: エリア別時刻別（各エリアの headroom >= 当該エリアの所要調整力）
 for a, area_gens in enumerate([G_AREA1, G_AREA2, G_AREA3]):
@@ -467,10 +515,14 @@ else:
         gen1_vals = [sum(value(P[g][t]) for g in G_AREA1) for t in TIME]
         gen2_vals = [sum(value(P[g][t]) for g in G_AREA2) for t in TIME]
         gen3_vals = [sum(value(P[g][t]) for g in G_AREA3) for t in TIME]
+        P_disch_vals = {a: [value(P_discharge[a][t]) for t in TIME] for a in AREAS}
+        P_ch_vals = {a: [value(P_charge[a][t]) for t in TIME] for a in AREAS}
         bal1_res = [
             gen1_vals[t - 1]
             + WIND_AVAIL_BY_AREA["Area1"][t - 1]
             + solar_used_vals_by_area["Area1"][t - 1]
+            + P_disch_vals["Area1"][t - 1]
+            - P_ch_vals["Area1"][t - 1]
             - DEMAND_BY_AREA["Area1"][t - 1]
             - flow_12_vals[t - 1]
             for t in TIME
@@ -479,6 +531,8 @@ else:
             gen2_vals[t - 1]
             + WIND_AVAIL_BY_AREA["Area2"][t - 1]
             + solar_used_vals_by_area["Area2"][t - 1]
+            + P_disch_vals["Area2"][t - 1]
+            - P_ch_vals["Area2"][t - 1]
             - DEMAND_BY_AREA["Area2"][t - 1]
             + flow_12_vals[t - 1]
             - flow_23_vals[t - 1]
@@ -488,6 +542,8 @@ else:
             gen3_vals[t - 1]
             + WIND_AVAIL_BY_AREA["Area3"][t - 1]
             + solar_used_vals_by_area["Area3"][t - 1]
+            + P_disch_vals["Area3"][t - 1]
+            - P_ch_vals["Area3"][t - 1]
             - DEMAND_BY_AREA["Area3"][t - 1]
             + flow_23_vals[t - 1]
             for t in TIME
@@ -811,6 +867,7 @@ def _build_report_html(runs):
     \]
     <p><strong>最低稼働機数:</strong> \(\displaystyle \sum_{g \in \mathcal{G}_a} u_{g,t} \ge N_{\min}\)（各 \(a,t\)）。</p>
     <p><strong>その他:</strong> \(P_{g,t} \in [\underline{P}_g u_{g,t}, \overline{P}_g u_{g,t}]\)、ランプ・MUT/MDT・スタートアップ \(v_{g,t}\) の論理制約は通常のSCUCと同様。</p>
+    <p><strong>蓄電池（各エリア）:</strong> 需給に \(P_{\mathrm{disch},a,t} - P_{\mathrm{ch},a,t}\) を追加。SOC: \(E_{a,t} = E_{a,t-1} + \eta_c P_{\mathrm{ch},a,t} - P_{\mathrm{disch},a,t}/\eta_d\)、上下限・初期/終端値・充放電排他（同時不可）を制約。</p>
     """
     # 条件タブ・結果タブを各 run ごとに生成
     cond_panels = []
