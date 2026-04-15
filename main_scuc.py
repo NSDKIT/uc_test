@@ -740,11 +740,91 @@ else:
         plt.close(fig)
         buf_result.seek(0)
         result_b64 = base64.b64encode(buf_result.read()).decode("ascii")
+        # ----- Curtailment analysis data (per-area) -----
+        solar_avail_by_area_vals = {a: list(SOLAR_AVAIL_BY_AREA[a][:T]) for a in AREAS}
+        solar_used_by_area_vals = {a: [solar_used_vals_by_area[a][i] for i in range(T)] for a in AREAS}
+        solar_curt_by_area_vals = {
+            a: [max(0, solar_avail_by_area_vals[a][i] - solar_used_by_area_vals[a][i]) for i in range(T)]
+            for a in AREAS
+        }
+        solar_curt_total_vals = [sum(solar_curt_by_area_vals[a][i] for a in AREAS) for i in range(T)]
+
+        # ----- Curtailment figure -----
+        fig_curt = plt.figure(figsize=(max(14, T_PLOT * 0.18), 10))
+        gs_curt = GridSpec(3, 1, figure=fig_curt, height_ratios=[1.2, 1, 1])
+
+        # Panel 1: Stacked area — curtailment by area (time series)
+        ax_ts = fig_curt.add_subplot(gs_curt[0])
+        curt_arr_by_area = {a: np.array(solar_curt_by_area_vals[a][:T_PLOT], dtype=float) for a in AREAS}
+        bottom_curt = np.zeros(T_PLOT, dtype=float)
+        for i, a in enumerate(AREAS):
+            ax_ts.fill_between(hours, bottom_curt, bottom_curt + curt_arr_by_area[a],
+                               alpha=0.7, color=colors_area[i % len(colors_area)], label=a)
+            bottom_curt = bottom_curt + curt_arr_by_area[a]
+        ax_ts.plot(hours, np.array(solar_avail_total[:T_PLOT], dtype=float),
+                   "k--", linewidth=1.0, alpha=0.7, label="Total solar available")
+        ax_ts.set_ylabel("Curtailment (MW)")
+        ax_ts.set_title("Solar Curtailment by Area (Time Series)", fontsize=12)
+        ax_ts.legend(loc="upper right", fontsize=8)
+        ax_ts.grid(True, alpha=0.3)
+        ax_ts.set_xlim(0.5, T_PLOT + 0.5)
+        _vline_day(ax_ts)
+
+        # Panel 2: Bar chart — total curtailed energy by area
+        ax_bar = fig_curt.add_subplot(gs_curt[1])
+        curt_energy_by_area = {a: sum(solar_curt_by_area_vals[a]) for a in AREAS}
+        avail_energy_by_area = {a: sum(solar_avail_by_area_vals[a]) for a in AREAS}
+        bar_x = np.arange(N_AREAS)
+        bar_avail = [avail_energy_by_area[a] for a in AREAS]
+        bar_curt = [curt_energy_by_area[a] for a in AREAS]
+        bar_used = [avail_energy_by_area[a] - curt_energy_by_area[a] for a in AREAS]
+        ax_bar.bar(bar_x, bar_used, color=[colors_area[i % len(colors_area)] for i in range(N_AREAS)],
+                   alpha=0.7, label="Used")
+        ax_bar.bar(bar_x, bar_curt, bottom=bar_used,
+                   color=[colors_area[i % len(colors_area)] for i in range(N_AREAS)],
+                   alpha=0.3, hatch="//", label="Curtailed")
+        for i, a in enumerate(AREAS):
+            rate = (curt_energy_by_area[a] / avail_energy_by_area[a] * 100) if avail_energy_by_area[a] > 0 else 0
+            ax_bar.text(i, bar_avail[i] + max(bar_avail) * 0.01, f"{rate:.1f}%",
+                        ha="center", va="bottom", fontsize=9, fontweight="bold")
+        ax_bar.set_xticks(bar_x)
+        ax_bar.set_xticklabels(AREAS)
+        ax_bar.set_ylabel("Energy (MWh)")
+        ax_bar.set_title("Solar Energy by Area: Used vs Curtailed", fontsize=12)
+        ax_bar.legend(loc="upper right", fontsize=8)
+        ax_bar.grid(True, alpha=0.3, axis="y")
+
+        # Panel 3: Curtailment rate time series per area
+        ax_rate = fig_curt.add_subplot(gs_curt[2])
+        for i, a in enumerate(AREAS):
+            avail_a = np.array(solar_avail_by_area_vals[a][:T_PLOT], dtype=float)
+            curt_a = curt_arr_by_area[a]
+            with np.errstate(divide="ignore", invalid="ignore"):
+                rate_a = np.where(avail_a > 0, curt_a / avail_a * 100, 0.0)
+            ax_rate.plot(hours, rate_a, "-", color=colors_area[i % len(colors_area)],
+                         linewidth=1.2, label=a)
+        ax_rate.set_ylabel("Curtailment Rate (%)")
+        ax_rate.set_xlabel("Time (h)")
+        ax_rate.set_title("Solar Curtailment Rate by Area (%)", fontsize=12)
+        ax_rate.legend(loc="upper right", fontsize=8)
+        ax_rate.grid(True, alpha=0.3)
+        ax_rate.set_xlim(0.5, T_PLOT + 0.5)
+        ax_rate.set_ylim(bottom=0)
+        _vline_day(ax_rate)
+
+        fig_curt.tight_layout()
+        buf_curt = io.BytesIO()
+        fig_curt.savefig(buf_curt, format="png", dpi=150, bbox_inches="tight")
+        plt.close(fig_curt)
+        buf_curt.seek(0)
+        curt_b64 = base64.b64encode(buf_curt.read()).decode("ascii")
+
         runs.append({
             "scale": 1.0,
             "status": LpStatus[prob.status],
             "cond_b64": cond_b64,
             "result_b64": result_b64,
+            "curt_b64": curt_b64,
             "cost": value(prob.objective),
             "cost_fuel": cost_fuel,
             "cost_noload": cost_noload,
@@ -755,6 +835,10 @@ else:
             "max_abs_flow": float(max_abs_flow),
             "solar_avail_total": list(solar_avail_total),
             "solar_used_total": list(solar_used_total),
+            "solar_avail_by_area": solar_avail_by_area_vals,
+            "solar_used_by_area": solar_used_by_area_vals,
+            "solar_curt_by_area": solar_curt_by_area_vals,
+            "solar_curt_total": solar_curt_total_vals,
             "adjustment_by_area": [np.array(adjustment_by_area[a]) for a in range(N_AREAS)],
             "adj_required_by_area": [np.array(adj_required_by_area[a]) for a in range(N_AREAS)],
         })
@@ -835,6 +919,72 @@ def _build_report_html(runs):
       <div class="result-fig-wrap">{result_img}</div>
     </div>''')
 
+    # 抑制分析タブ（Curtailment Analysis）
+    curt_panels = []
+    tab_buttons_curt = []
+    for i, run in enumerate(runs):
+        idx = i + 1
+        tab_buttons_curt.append(f'<li><button type="button" role="tab" id="tab-curt-{idx}" aria-selected="false">出力抑制分析</button></li>')
+        curt_b64 = run.get("curt_b64")
+        curt_img = f'<img src="data:image/png;base64,{curt_b64}" alt="Curtailment" class="result-fig" />' if curt_b64 else "<p>抑制分析図なし</p>"
+
+        # Build per-area curtailment summary table
+        savail_by_area = run.get("solar_avail_by_area") or {}
+        sused_by_area = run.get("solar_used_by_area") or {}
+        scurt_by_area = run.get("solar_curt_by_area") or {}
+        scurt_total = run.get("solar_curt_total") or []
+
+        total_avail_all = 0.0
+        total_curt_all = 0.0
+        peak_curt_all = 0.0
+        area_rows = []
+        for a in AREAS:
+            avail_a = sum(savail_by_area.get(a, []))
+            used_a = sum(sused_by_area.get(a, []))
+            curt_a = sum(scurt_by_area.get(a, []))
+            curt_list = scurt_by_area.get(a, [])
+            peak_a = max(curt_list) if curt_list else 0.0
+            rate_a = (curt_a / avail_a * 100) if avail_a > 0 else 0.0
+            total_avail_all += avail_a
+            total_curt_all += curt_a
+            peak_curt_all = max(peak_curt_all, peak_a)
+            area_rows.append(
+                f"      <tr><td style='text-align:left'>{a}</td>"
+                f"<td>{avail_a:,.1f}</td><td>{used_a:,.1f}</td>"
+                f"<td>{curt_a:,.1f}</td><td>{peak_a:,.1f}</td>"
+                f"<td>{rate_a:.1f}%</td></tr>"
+            )
+        total_rate = (total_curt_all / total_avail_all * 100) if total_avail_all > 0 else 0.0
+        total_used_all = total_avail_all - total_curt_all
+        peak_total = max(scurt_total) if scurt_total else 0.0
+        area_rows.append(
+            f"      <tr style='font-weight:bold;background:#f0f4ff'>"
+            f"<td style='text-align:left'>Total</td>"
+            f"<td>{total_avail_all:,.1f}</td><td>{total_used_all:,.1f}</td>"
+            f"<td>{total_curt_all:,.1f}</td><td>{peak_total:,.1f}</td>"
+            f"<td>{total_rate:.1f}%</td></tr>"
+        )
+        area_table = "\n".join(area_rows)
+
+        curt_panels.append(f'''
+    <div id="panel-curt-{idx}" class="tab-panel" role="tabpanel">
+      <h2>出力抑制分析（Curtailment Analysis）</h2>
+      <p>太陽光発電の出力抑制（カーテイルメント）の詳細分析。利用可能量に対して実際に抑制された量をエリア別・時系列で示す。</p>
+      <h3>エリア別サマリ</h3>
+      <div class="scroll-wrap">
+      <table class="data-table">
+        <thead><tr><th style="text-align:left">Area</th><th>Available (MWh)</th><th>Used (MWh)</th><th>Curtailed (MWh)</th><th>Peak Curt (MW)</th><th>Curt Rate</th></tr></thead>
+        <tbody>
+{area_table}
+        </tbody>
+      </table>
+      </div>
+      <h3>総抑制量（Total Curtailed Energy）</h3>
+      <p><strong>{total_curt_all:,.1f} MWh</strong>（全エリア合計、利用可能量 {total_avail_all:,.1f} MWh の <strong>{total_rate:.1f}%</strong>）</p>
+      <h3>抑制パターン（Time Series &amp; Breakdown）</h3>
+      <div class="result-fig-wrap">{curt_img}</div>
+    </div>''')
+
     # 考察: 結果サマリ（倍数なし）
     rows = []
     for run in runs:
@@ -855,36 +1005,39 @@ def _build_report_html(runs):
     <h3>結果サマリ</h3>
     <div class="scroll-wrap">
     <table class="data-table">
-      <thead><tr><th>Total cost (JPY)</th><th>Max |flow| (MW)</th><th>Max flow util %</th><th>Solar curt (MW)</th><th>Curt %</th></tr></thead>
+      <thead><tr><th>Total cost (JPY)</th><th>Max |flow| (MW)</th><th>Max flow util %</th><th>Solar curt (MWh)</th><th>Curt %</th></tr></thead>
       <tbody>
 {table_rows}
       </tbody>
     </table>
     </div>
     <h3>まとめ</h3>
-    <p>上表と「結果」タブの図を参照し、連系線利用率・太陽光抑制率などを確認できる。</p>
+    <p>上表と「結果」「出力抑制分析」タブの図を参照し、連系線利用率・太陽光抑制率などを確認できる。</p>
     """
 
     tab_list = (
         '<li><button type="button" role="tab" id="tab-method" aria-selected="true" class="active">シミュレーション手法</button></li>\n      '
         + "\n      ".join(tab_buttons_cond) + "\n      "
         + "\n      ".join(tab_buttons_result) + "\n      "
+        + "\n      ".join(tab_buttons_curt) + "\n      "
         + '<li><button type="button" role="tab" id="tab-consideration" aria-selected="false">考察</button></li>'
     )
     panels = (
         '<div id="panel-method" class="tab-panel active" role="tabpanel">' + method_html + "</div>\n"
         + "".join(cond_panels) + "\n"
         + "".join(result_panels) + "\n"
+        + "".join(curt_panels) + "\n"
         + '<div id="panel-consideration" class="tab-panel" role="tabpanel">' + consideration_html + "</div>"
     )
     n = len(runs)
-    tab_ids_js = "['method', " + ", ".join(f"'cond-{j+1}'" for j in range(n)) + ", " + ", ".join(f"'result-{j+1}'" for j in range(n)) + ", 'consideration']"
+    tab_ids_js = "['method', " + ", ".join(f"'cond-{j+1}'" for j in range(n)) + ", " + ", ".join(f"'result-{j+1}'" for j in range(n)) + ", " + ", ".join(f"'curt-{j+1}'" for j in range(n)) + ", 'consideration']"
     onclick_js = []
     onclick_js.append("document.getElementById('tab-method').onclick = function() { show('method'); };")
     for j in range(n):
         idx = j + 1
         onclick_js.append(f"document.getElementById('tab-cond-{idx}').onclick = function() {{ show('cond-{idx}'); }};")
         onclick_js.append(f"document.getElementById('tab-result-{idx}').onclick = function() {{ show('result-{idx}'); }};")
+        onclick_js.append(f"document.getElementById('tab-curt-{idx}').onclick = function() {{ show('curt-{idx}'); }};")
     onclick_js.append("document.getElementById('tab-consideration').onclick = function() { show('consideration'); };")
 
     html_content = """<!DOCTYPE html>
